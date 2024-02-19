@@ -12,11 +12,17 @@ import requests
 import json
 import re
 
+granule_cursor = ""
+
 allMatchingGranules = []
 # parse the related url
 def parseRelatedUrls(collectionsResult):
   for collection in collectionsResult:
+    collectionConceptId = collection.get('conceptId')
     granules = collection.get('granules')
+    count = granules.get('count')
+    granule_cursor = granules.get('cursor')
+    # print(f'this is the number of garnules on the collection {count}! On the collection {collectionConceptId} this is the current cursor {granule_cursor}')
     if (granules):
       for granule in granules.get('items'):
         relatedUrls = granule.get('relatedUrls')
@@ -35,7 +41,7 @@ def parseRelatedUrls(collectionsResult):
 # Set logging
 logging.basicConfig(level=logging.INFO)
 
-token = os.getenv('OPS_TOKEN')
+token = ""
 
 endpoint = os.getenv('GRAPHQL_URL', 'https://graphql.earthdata.nasa.gov/api')
 
@@ -45,11 +51,14 @@ headers = {"Authorization": f"{token}"}
 
 CURSOR = ""
 
-QUERY = """query ($params: CollectionsInput) {
+QUERY = """query ($params: CollectionsInput, , $granulesParams2: GranulesInput) {
   collections(params: $params) {
     cursor
     items {
-      granules {
+      conceptId
+      granules(params: $granulesParams2) {
+        count
+        cursor
         items {
         conceptId
         relatedUrls
@@ -62,6 +71,9 @@ QUERY = """query ($params: CollectionsInput) {
 VARIABLES = {
     "params": {
       "cursor": CURSOR
+    },
+    "granulesParams2": {
+      "cursor": granules_cursor
     }
 }
 
@@ -82,8 +94,8 @@ else:
     logging.debug(f'Response status code: {response.status_code}')
     sys.exit()
 
-# # Retrieve subsequent collections
-if response.status_code == 200:
+# # # Retrieve subsequent collections
+# if response.status_code == 200:
     page_num = 0
     while cursor:
         # Set the cursor value to the global value
@@ -93,6 +105,16 @@ if response.status_code == 200:
             "params": {
               "cursor": cursor,
             }
+        }
+        if granule_cursor:
+          newVariables = {
+            "params": {
+              "cursor": cursor,
+            },
+            "granulesParams2": {
+              "cursor": granule_cursor,
+            }
+            response = requests.post(url=endpoint, json={"query": QUERY, "variables": newVariables}, headers=headers, timeout=90)
         }
         response = requests.post(url=endpoint, json={"query": QUERY, "variables": newVariables}, headers=headers, timeout=90)
         result = response.json()
